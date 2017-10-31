@@ -121,17 +121,32 @@ CFDataRef ff_videotoolbox_hvcc_extradata_create(AVCodecContext *avctx)
     HEVCContext *h = avctx->priv_data;
     const HEVCVPS *vps = (const HEVCVPS *)h->ps.vps_list[0]->data;
     const HEVCSPS *sps = (const HEVCSPS *)h->ps.sps_list[0]->data;
-    int i, num_pps = 0;
+    int i, num_vps = 0, num_sps = 0, num_pps = 0;
     const HEVCPPS *pps = h->ps.pps;
     PTLCommon ptlc = vps->ptl.general_ptl;
     VUI vui = sps->vui;
     uint8_t parallelismType;
     CFDataRef data = NULL;
     uint8_t *p;
-    int vt_extradata_size = 23 + 5 + vps->data_size + 5 + sps->data_size + 3;
+    int vt_extradata_size = 23 + 3 + 3 + 3;
     uint8_t *vt_extradata;
 
-    for (i = 0; i < MAX_PPS_COUNT; i++) {
+
+    for (i = 0; i < HEVC_MAX_VPS_COUNT; i++) {
+        if (h->ps.vps_list[i]) {
+            const HEVCVPS *vps = (const HEVCVPS *)h->ps.vps_list[i]->data;
+            vt_extradata_size += 2 + vps->data_size;
+            num_vps++;
+        }
+    }
+    for (i = 0; i < HEVC_MAX_SPS_COUNT; i++) {
+        if (h->ps.sps_list[i]) {
+            const HEVCSPS *sps = (const HEVCSPS *)h->ps.sps_list[i]->data;
+            vt_extradata_size += 2 + sps->data_size;
+            num_sps++;
+        }
+    }
+    for (i = 0; i < HEVC_MAX_PPS_COUNT; i++) {
         if (h->ps.pps_list[i]) {
             const HEVCPPS *pps = (const HEVCPPS *)h->ps.pps_list[i]->data;
             vt_extradata_size += 2 + pps->data_size;
@@ -237,28 +252,38 @@ CFDataRef ff_videotoolbox_hvcc_extradata_create(AVCodecContext *avctx)
      */
     AV_W8(p, 1 << 7 |
              HEVC_NAL_VPS & 0x3f);
-    /* unsigned int(16) numNalus; */
-    AV_WB16(p + 1, 1);
-    /* unsigned int(16) nalUnitLength; */
-    AV_WB16(p + 3, vps->data_size);
-    /* bit(8*nalUnitLength) nalUnit; */
-    memcpy(p + 5, vps->data, vps->data_size);
-    p += 5 + vps->data_size;
+    AV_WB16(p + 1, num_vps);
+    p += 3;
+
+    for (i = 0; i < HEVC_MAX_VPS_COUNT; i++) {
+        if (h->ps.vps_list[i]) {
+            const HEVCVPS *vps = (const HEVCVPS *)h->ps.vps_list[i]->data;
+            AV_WB16(p, vps->data_size);
+            memcpy(p + 2, vps->data, vps->data_size);
+            p += 2 + vps->data_size;
+        }
+    }
 
     /* sps */
     AV_W8(p, 1 << 7 |
              HEVC_NAL_SPS & 0x3f);
-    AV_WB16(p + 1, 1);
-    AV_WB16(p + 3, sps->data_size);
-    memcpy(p + 5, sps->data, sps->data_size);
-    p += 5 + sps->data_size;
+    AV_WB16(p + 1, num_sps);
+    p += 3;
+    for (i = 0; i < HEVC_MAX_SPS_COUNT; i++) {
+        if (h->ps.sps_list[i]) {
+            const HEVCSPS *sps = (const HEVCSPS *)h->ps.sps_list[i]->data;
+            AV_WB16(p, sps->data_size);
+            memcpy(p + 2, sps->data, sps->data_size);
+            p += 2 + sps->data_size;
+        }
+    }
 
     /* pps */
     AV_W8(p, 1 << 7 |
              HEVC_NAL_PPS & 0x3f);
     AV_WB16(p + 1, num_pps);
     p += 3;
-    for (i = 0; i < MAX_PPS_COUNT; i++) {
+    for (i = 0; i < HEVC_MAX_PPS_COUNT; i++) {
         if (h->ps.pps_list[i]) {
             const HEVCPPS *pps = (const HEVCPPS *)h->ps.pps_list[i]->data;
             AV_WB16(p, pps->data_size);
